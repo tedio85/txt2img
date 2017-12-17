@@ -31,10 +31,10 @@ def conv2d(
 	strides=[1,1,1,1], 
 	padding='SAME', 
 	W_init = tf.truncated_normal_initializer(stddev=0.02),
-    b_init = tf.constant_initializer(value=0.0),
-    with_all=False, 
-    dtype=tf.float32, 
-    name ='2D-Convolution-Layer'):
+	b_init = tf.constant_initializer(value=0.0),
+    	with_all=False, 
+    	dtype=tf.float32, 
+    	name ='2D-Convolution-Layer'):
 	# filter_shape: [height, width, in_channels, out_channels]
 	with tf.variable_scope(name):
 		W = tf.get_variable(name='W_conv2d', shape=filter_shape, initializer=W_init, dtype=dtype)
@@ -53,10 +53,10 @@ def deconv2d(
 	strides=[1,2,2,1],
 	padding='SAME',
 	W_init = tf.truncated_normal_initializer(stddev=0.02),
-    b_init = tf.constant_initializer(value=0.0),
-    with_all=False, 
-    dtype=tf.float32,
-    name='2D-Deconvolution-Layer'):
+    	b_init = tf.constant_initializer(value=0.0),
+    	with_all=False, 
+    	dtype=tf.float32,
+    	name='2D-Deconvolution-Layer'):
 	# filter_shape: [height, width, output_channels, in_channels]
 	with tf.variable_scope(name):
 		W = tf.get_variable(name='W_deconv2d', shape=filter_shape, initializer=W_init, dtype=dtype)
@@ -101,13 +101,13 @@ def batch_norm(
         # Be preformed only when training
         mean, variance = tf.nn.moments(x, axis)
         update_moving_mean = moving_averages.assign_moving_average(moving_mean, 
-        														   mean, 
-        														   decay, 
-        														   zero_debias=False)
+								   mean, 
+								   decay, 
+								   zero_debias=False)
         update_moving_variance = moving_averages.assign_moving_average(moving_variance, 
-        															   variance, 
-        															   decay, 
-        															   zero_debias=False)
+								       variance, 
+								       decay, 
+								       zero_debias=False)
         def mean_var_with_update():
             with tf.control_dependencies([update_moving_mean, update_moving_variance]):
                 return tf.identity(mean), tf.identity(variance)
