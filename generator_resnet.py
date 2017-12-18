@@ -1,5 +1,9 @@
+# ---------------
+# Author: Tu, Tao
+# Reference: https://github.com/zsdonghao/text-to-image/blob/master/model.py
+# ---------------
 import Layer
-
+import tensorflow as tf
 
 def generator(z, txt, img_height, img_width, img_depth=3, gf_dim=128, is_train=True, reuse=tf.AUTO_REUSE):
     H, W, D = img_height, img_width, img_depth
