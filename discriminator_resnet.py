@@ -51,10 +51,10 @@ def discriminator(x, txt, img_height, img_width, img_depth=3, df_dim=64, is_trai
         h6_out = tf.nn.leaky_relu(h6_res)
         # txt: [batch_size, s_dim]
         # h6_out: [batch_size, _, _, df_dim*8]
-        txt_expand = tf.expand_dims(txt, axis=1, name='expand_1')
-        txt_expand = tf.expand_dims(txt_expand, axis=1, name='expand_2')
+        txt_expand = tf.expand_dims(txt, axis=1, name='txt_expand_1')
+        txt_expand = tf.expand_dims(txt_expand, axis=1, name='txt_expand_2')
         txt_expand = tf.tile(txt_expand, multiples=[
-                             1, h6_out.get_shape()[1], h6_out.get_shape()[2], 1])
+                             1, h6_out.get_shape()[1], h6_out.get_shape()[2], 1], name='txt_tile')
         h_txt = tf.concat([h6_out, txt_expand], axis=3)
         # 7
         h7 = Layer.conv2d(h_txt, act=tf.identity, filter_shape=[1, 1, h_txt.get_shape()[-1], df_dim * 8],
