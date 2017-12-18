@@ -6,7 +6,7 @@ import Layer
 import tensorflow as tf
 
 
-def textEncoder(txt, vocab_size, batch_size, with_matrix=False, reuse=tf.AUTO_REUSE, pad_token=0, bidirectional=False, word_dim=256, sent_dim=128):
+def textEncoder(txt, vocab_size, with_matrix=False, reuse=tf.AUTO_REUSE, pad_token=0, bidirectional=False, word_dim=256, sent_dim=128):
     with tf.variable_scope('TextEncoder', reuse=reuse):
         if with_matrix:
             w_embed_seq, w_matrix = _word_embedding(
@@ -16,7 +16,7 @@ def textEncoder(txt, vocab_size, batch_size, with_matrix=False, reuse=tf.AUTO_RE
                 txt, word_dim, vocab_size, with_matrix=False)
         w_seq_len = Layer.retrieve_seq_length(txt, pad_val=pad_token)
         s_embed = _sent_embedding(
-            w_embed_seq, sent_dim, batch_size, w_seq_len, bidirectional)
+            w_embed_seq, sent_dim, w_seq_len, bidirectional)
         # according to the phi function of paper "Generative Adversarial Text
         # to Image Synthesis"
         code = Layer.dense(
@@ -35,8 +35,9 @@ def _word_embedding(txt, w_dim, vocab_size, with_matrix):
     return w_embeds if not with_matrix else (w_embeds, embed_matrix)
 
 
-def _sent_embedding(w_embed_seq, s_dim, batch_size, w_seq_len, bidirectional=False):
+def _sent_embedding(w_embed_seq, s_dim, w_seq_len, bidirectional=False):
     with tf.variable_scope('sent_embedding') as scope:
+        batch_size = tf.shape(w_embed_seq)[0]
         if bidirectional:
             cell_fw = tf.contrib.rnn.BasicLSTMCell(s_dim // 2)
             cell_bw = tf.contrib.rnn.BasicLSTMCell(s_dim // 2)
