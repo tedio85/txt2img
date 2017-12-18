@@ -4,8 +4,6 @@
 # ---------------
 import tensorflow as tf
 from tensorflow.python.training import moving_averages
-#from tensorflow.python.ops import control_flow_ops
-
 
 def dense(
         x,
@@ -134,7 +132,7 @@ def batch_norm(
     return outputs
 
 
-def Flatten(x, name='Flatten-Layer'):
+def flatten(x, name='Flatten-Layer'):
     x_shape = x.get_shape().as_list()[1:]
     flat_dim = 1
     for dim in x_shape:
