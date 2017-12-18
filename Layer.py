@@ -118,7 +118,7 @@ def batch_norm(
             outputs = act(tf.nn.batch_normalization(x, moving_mean, moving_variance, beta, gamma, eps))
     return outputs
 
-def Flatten(x, name='Flatten-Layer'):
+def flatten(x, name='Flatten-Layer'):
 	x_shape = x.get_shape().as_list()[1:]
 	flat_dim = 1
 	for dim in x_shape:
