@@ -4,7 +4,6 @@
 # ---------------
 import tensorflow as tf
 from tensorflow.python.training import moving_averages
-#from tensorflow.python.ops import control_flow_ops
 
 
 def dense(
@@ -22,12 +21,11 @@ def dense(
         b = tf.get_variable(name='b', shape=(output_dim),
                             initializer=b_init, dtype=dtype)
         if b_init:
-            outputs = act(tf.matmul(x, W) + b)           
+            outputs = act(tf.matmul(x, W) + b)
         else:
-            outputs = act(tf.matmul(x, W)) 
+            outputs = act(tf.matmul(x, W))
 
-    return (outputs, W, b) if with_all else outputs 
-
+    return outputs if not with_all else (outputs, W, b)
 
 
 def conv2d(
@@ -48,11 +46,12 @@ def conv2d(
         b = tf.get_variable(
             name='b_conv2d', shape=filter_shape[-1], initializer=b_init, dtype=dtype)
         if b_init:
-            outputs = act(tf.nn.conv2d(x, W, strides=strides, padding=padding) + b)
+            outputs = act(tf.nn.conv2d(
+                x, W, strides=strides, padding=padding) + b)
         else:
             outputs = act(tf.nn.conv2d(x, W, strides=strides, padding=padding))
 
-    return (outputs, W, b) if with_all else outputs 
+    return outputs if not with_all else (outputs, W, b)
 
 
 def deconv2d(
@@ -79,8 +78,8 @@ def deconv2d(
         else:
             outputs = act(tf.nn.conv2d_transpose(
                 x, W, output_shape=output_shape, strides=strides, padding=padding))
-    
-    return (outputs, W, b) if with_all else outputs 
+
+    return outputs if not with_all else (outputs, W, b)
 
 
 def batch_norm(
