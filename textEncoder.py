@@ -3,6 +3,7 @@
 # ---------------
 
 import Layer
+import tensorflow as tf
 
 def textEncoder(txt, vocab_size, batch_size, with_matrix=False, reuse=tf.AUTO_REUSE, pad_token=0, bidirectional=False, word_dim=256, sent_dim=128):
     with tf.variable_scope('TextEncoder', reuse=reuse):
