@@ -4,6 +4,8 @@
 # ---------------
 import tensorflow as tf
 from tensorflow.python.training import moving_averages
+#from tensorflow.python.ops import control_flow_ops
+
 
 def dense(
         x,
@@ -19,11 +21,13 @@ def dense(
             x.get_shape()[-1], output_dim), initializer=W_init, dtype=dtype)
         b = tf.get_variable(name='b', shape=(output_dim),
                             initializer=b_init, dtype=dtype)
-        outputs = act(tf.matmul(x, W) + b)
-    if with_all:
-        return outputs, W, b
-    else:
-        return outputs
+        if b_init:
+            outputs = act(tf.matmul(x, W) + b)           
+        else:
+            outputs = act(tf.matmul(x, W)) 
+
+    return (outputs, W, b) if with_all else outputs 
+
 
 
 def conv2d(
@@ -43,11 +47,12 @@ def conv2d(
                             initializer=W_init, dtype=dtype)
         b = tf.get_variable(
             name='b_conv2d', shape=filter_shape[-1], initializer=b_init, dtype=dtype)
-        outputs = act(tf.nn.conv2d(x, W, strides=strides, padding=padding) + b)
-    if with_all:
-        return outputs, W, b
-    else:
-        return outputs
+        if b_init:
+            outputs = act(tf.nn.conv2d(x, W, strides=strides, padding=padding) + b)
+        else:
+            outputs = act(tf.nn.conv2d(x, W, strides=strides, padding=padding))
+
+    return (outputs, W, b) if with_all else outputs 
 
 
 def deconv2d(
@@ -68,12 +73,14 @@ def deconv2d(
                             initializer=W_init, dtype=dtype)
         b = tf.get_variable(name='b_deconv2d',
                             shape=filter_shape[-2], initializer=b_init, dtype=dtype)
-        outputs = act(tf.nn.conv2d_transpose(
-            x, W, output_shape=output_shape, strides=strides, padding=padding) + b)
-    if with_all:
-        return outputs, W, b
-    else:
-        return outputs
+        if b_init:
+            outputs = act(tf.nn.conv2d_transpose(
+                x, W, output_shape=output_shape, strides=strides, padding=padding) + b)
+        else:
+            outputs = act(tf.nn.conv2d_transpose(
+                x, W, output_shape=output_shape, strides=strides, padding=padding))
+    
+    return (outputs, W, b) if with_all else outputs 
 
 
 def batch_norm(
