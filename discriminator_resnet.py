@@ -11,8 +11,6 @@ def discriminator(x, txt, img_height, img_width, img_depth=3, df_dim=64, is_trai
     H, W, D = img_height, img_width, img_depth
     w_init = tf.random_normal_initializer(stddev=0.02)
     gamma_init = tf.random_normal_initializer(mean=1.0, stddev=0.02)
-    H2, H4, H8, H16 = int(H / 2), int(H / 4), int(H / 8), int(H / 16)
-    W2, W4, W8, W16 = int(W / 2), int(W / 4), int(W / 8), int(W / 16)
     with tf.variable_scope('Discriminator', reuse=reuse):
         h0 = Layer.conv2d(x, act=tf.nn.leaky_relu, filter_shape=[4, 4, D, df_dim], strides=[1, 2, 2, 1],
                           padding='SAME', W_init=w_init, b_init=None, name='h0/conv2d')
