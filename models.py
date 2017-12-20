@@ -6,6 +6,15 @@
 import Layer
 import tensorflow as tf
 
+""" 
+This file contains following models 
+  - imageEncoder:  to encode images into features
+  - textEncoder:   to encode texts into features
+  - generator:     to generate images given noises and condition texts
+  - discriminator: to discriminate real and fake images given condition texts
+
+"""
+
 
 def imageEncoder(x, out_dim=128, df_dim=64, is_train=True, reuse=tf.AUTO_REUSE):
     w_init = tf.random_normal_initializer(stddev=0.02)
