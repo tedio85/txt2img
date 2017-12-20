@@ -155,7 +155,7 @@ class TrainHelper(object):
         count = 1
         for ep in range(epoch):
             self.restore(ckpt_dir)
-            if ep != 0 and (epoch % hps['decay_every'] == 0):
+            if ep != 0 and (epoch % hps.decay_every == 0):
                 _lr_decay = hps.lr_decay ** (ep // hps.decay_every)
                 self.sess.run(tf.assign(self.lr_op, hps.lr * _lr_decay))
                 print('New learning rate: %f' % hps.lr * _lr_decay)
@@ -239,5 +239,5 @@ if __name__ == '__main__':
     helper.build()
     helper.train(batch_size=64, epoch=1)
     helper.save(idx=666)
-    
+
     sess.close()
