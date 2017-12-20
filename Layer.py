@@ -149,3 +149,9 @@ def flatten(x, name='Flatten-Layer'):
 
 def retrieve_seq_length(x, pad_val=0):
     return tf.reduce_sum(tf.cast(tf.not_equal(x, pad_val), dtype=tf.int32), 1)
+
+
+def cosine_similarity(v1, v2):
+    return tf.reduce_sum(tf.multiply(v1, v2), 1) / (tf.sqrt(tf.reduce_sum(tf.multiply(v1, v1), 1)) * tf.sqrt(tf.reduce_sum(tf.multiply(v2, v2), 1)))
+
+
