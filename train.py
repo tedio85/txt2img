@@ -12,6 +12,7 @@ import numpy as np
 from models import imageEncoder, textEncoder, generator as G, discriminator as D
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+logging.basicConfig(level=logging.INFO)
 
 # ---- Args ----
 # G: z, txt, img_height, img_width, img_depth=3, gf_dim=128, is_train=True, reuse=tf.AUTO_REUSE
@@ -55,8 +56,10 @@ def hparas(hps_list):
 class TrainHelper(object):
     """ For convenience. """
 
-    def __init__(self, hps):
+    def __init__(self, sess, hps):
         self.hps = hps
+        self.sess = sess
+        self.saver = None
 
     def build():
         hps = self.hps
@@ -138,23 +141,22 @@ class TrainHelper(object):
             # encoders optimizer
             self.enr_opt = tf.train.AdamOptimizer(self.lr_op, beta1=hps.beta1,
                                                   beta2=hps.beta2).apply_gradients(zip(grads, self.rnn_vars + self.cnn_vars))
-        self.saver = tf.train.Saver()
 
-    def train(num_train_example, batch_size=64, epoch=1, gpu_ratio=1, log=True):
+        self.sess.run(tf.global_variables_initializer())
+        self.saver = tf.train.Saver(max_to_keep=5)
+
+    def train(num_train_example, batch_size=64, epoch=1, ckpt_dir='./ckpt_model', log=True):
         hps = self.hps
         num_batch_per_epoch = num_train_example // batch_size
         sample_size = batch_size
 
-        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_ratio)
-        sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
-        sess.run(tf.global_variables_initializer())
-
         # train
         count = 1
         for ep in range(epoch):
+            self.restore(ckpt_dir)
             if ep != 0 and (epoch % hps['decay_every'] == 0):
                 _lr_decay = hps.lr_decay ** (ep // hps.decay_every)
-                sess.run(tf.assign(self.lr_op, hps.lr * _lr_decay))
+                self.sess.run(tf.assign(self.lr_op, hps.lr * _lr_decay))
                 print('New learning rate: %f' % hps.lr * _lr_decay)
             for step in range(num_batch_per_epoch):
                 # get matched caption
@@ -172,7 +174,7 @@ class TrainHelper(object):
 
                 # for ep < 50: train rnn, cnn
                 if ep < 50:
-                    errEnr, _ = sess.run([enr_loss, enr_opt], feed_dict={
+                    errEnr, _ = self.sess.run([enr_loss, enr_opt], feed_dict={
                         self.img: img,
                         self.img_w: img_w,
                         self.cap: cap,
@@ -182,7 +184,7 @@ class TrainHelper(object):
                     errEnr = 0.0
 
                 # update D
-                errD, _ = sess.run([d_loss, d_opt], feed_dict={
+                errD, _ = self.sess.run([d_loss, d_opt], feed_dict={
                     self.img: img,
                     self.img_w: img_w,
                     self.cap: cap,
@@ -191,15 +193,19 @@ class TrainHelper(object):
                 })
                 # update G after D have been updated n_critic times
                 if count % hps.n_critic == 0:
-                    errG, _ = sess.run([g_loss, g_opt], feed_dict={
+                    errG, _ = self.sess.run([g_loss, g_opt], feed_dict={
                         self.img: img,
                         self.cap: cap,
                         self.z: b_z
                     })
+                count += 1
+
                 if log:
                     logging.info(
                         'Epoch: [%2d/%2d] [%4d/%4d] time: %4.4fs, g_loss: %.8f, d_loss: %.8f, encoder_loss: %.8f'
                         % (ep, epoch, step, num_batch_per_epoch, time.time() - step_time, errG, errD, errEnr))
+
+            self.save(ckpt_dir=ckpt_dir, idx=ep)
 
         sess.close()
 
@@ -209,13 +215,27 @@ class TrainHelper(object):
         self.saver.save(self.sess, os.path.join(
             ckpt_dir, 'model-%d.ckpt' % idx))
 
-    def restore(self, ckpt_dir='ckpt/', idx=0):
-        self.saver.restore(self.sess, os.path.join(
-            ckpt_dir, 'model-%d.ckpt' % idx))
+    def restore(self, ckpt_dir='ckpt/', idx=None):
+        if idx:
+            self.saver.restore(self.sess, os.path.join(
+                ckpt_dir, 'model-%d.ckpt' % idx))
+            return True
+        else:
+            latest_ckpt = tf.train.latest_checkpoint(ckpt_dir)
+            if latest_ckpt:
+                self.saver.restore(latest_ckpt)
+                return True
+        return False
+
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
     hps = hparas(hps_list)
-    helper = TrainHelper(hps)
+    gpu_ratio = 0.333
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_ratio)
+    sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+
+    helper = TrainHelper(sess, hps)
     helper.build()
-    helper.train(batch_size=64, epoch=1, gpu_ratio=0.333)
+    helper.train(batch_size=64, epoch=1)
+
+    sess.close()
