@@ -238,6 +238,6 @@ if __name__ == '__main__':
     helper = TrainHelper(sess, hps)
     helper.build()
     helper.train(batch_size=64, epoch=1)
-    helper.save(idx='666')
+    helper.save(idx=666)
     
     sess.close()
