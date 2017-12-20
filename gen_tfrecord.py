@@ -62,4 +62,4 @@ if __name__ == '__main__':
 
     convert_to(X, 'img_cap_pairs')
     print('Create %s, total Time: %4.4fs' %
-          ('img_cap_pairs', time.time() - st_time))
+          (DIR_DATA + 'img_cap_pairs', time.time() - st_time))
