@@ -145,8 +145,9 @@ class TrainHelper(object):
         self.sess.run(tf.global_variables_initializer())
         self.saver = tf.train.Saver(max_to_keep=5)
 
-    def train(num_train_example, batch_size=64, epoch=1, ckpt_dir='./ckpt_model', log=True):
+    def train(self, batch_size=64, epoch=1, ckpt_dir='./ckpt_model', log=True):
         hps = self.hps
+        num_train_example = ??
         num_batch_per_epoch = num_train_example // batch_size
         sample_size = batch_size
 
@@ -237,5 +238,6 @@ if __name__ == '__main__':
     helper = TrainHelper(sess, hps)
     helper.build()
     helper.train(batch_size=64, epoch=1)
-
+    helper.save(idx='666')
+    
     sess.close()
