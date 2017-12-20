@@ -53,7 +53,7 @@ def hparas(hps_list):
     return hps
 
 
-class TrainHelper(object):
+class ModelWrapper(object):
     """ For convenience. """
 
     def __init__(self, sess, hps):
@@ -235,9 +235,9 @@ if __name__ == '__main__':
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_ratio)
     sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
 
-    helper = TrainHelper(sess, hps)
-    helper.build()
-    helper.train(batch_size=64, epoch=1)
-    helper.save(idx=666)
+    model = ModelWrapper(sess, hps)
+    model.build()
+    model.train(batch_size=64, epoch=1)
+    model.save(idx=666)
 
     sess.close()
