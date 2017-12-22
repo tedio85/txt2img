@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO)
 
 DIR_RECORD = './tfrecords/'
 hps_list = {
-    'lr': 1e-4,
+    'lr': 2e-4,
     'beta1': 0.5,
     'beta2': 0.9,
     'clip_norm': 1.0,
@@ -98,7 +98,7 @@ class ModelWrapper(object):
 
         dataset = tf.data.TFRecordDataset(self.files_tr)
         dataset = dataset.map(parser).repeat().shuffle(
-            buffer_size=10 * self.batch_size).batch(self.batch_size)
+            buffer_size=100 * self.batch_size).batch(self.batch_size)
         iterator = dataset.make_initializable_iterator()
         item = iterator.get_next()
         self.sess.run(iterator.initializer)
@@ -119,10 +119,11 @@ class ModelWrapper(object):
             # x: image embedding
             # v: text embedding
             if self.is_train:
-                self.v = textEncoder(self.cap, hps.voc_size, pad_token=hps.pad_token,
+                self.v = textEncoder(self.cap, hps.voc_size, seq_len=hps.max_seq_len, attention=True, pad_token=hps.pad_token,
                                      word_dim=hps.w_dim, sent_dim=hps.s_dim)
-                self.v_w = textEncoder(self.cap_w, hps.voc_size, pad_token=hps.pad_token,
-                                       word_dim=hps.w_dim, sent_dim=hps.s_dim, reuse=True)
+                self.v_w = textEncoder(self.cap_w, hps.voc_size, seq_len=hps.max_seq_len, attention=True,
+                                       pad_token=hps.pad_token, word_dim=hps.w_dim, sent_dim=hps.s_dim, reuse=True)
+
                 self.img_fake = G(self.z, self.v, img_height=hps.imH, img_width=hps.imW,
                                   img_depth=hps.imD, gf_dim=hps.gf_dim, is_train=self.use_bn)
                 # real data
@@ -135,7 +136,7 @@ class ModelWrapper(object):
                 _, self.logits_mis = D(self.img, self.v_w, img_height=hps.imH, img_width=hps.imW,
                                        img_depth=hps.imD, df_dim=hps.df_dim, is_train=self.use_bn, reuse=True)
             else:
-                self.v = textEncoder(self.cap, hps.voc_size, pad_token=hps.pad_token,
+                self.v = textEncoder(self.cap, hps.voc_size, seq_len=hps.max_seq_len, attention=True, pad_token=hps.pad_token,
                                      word_dim=hps.w_dim, sent_dim=hps.s_dim)
                 self.img_fake = G(self.z, self.v, img_height=hps.imH, img_width=hps.imW,
                                   img_depth=hps.imD, gf_dim=hps.gf_dim, is_train=self.use_bn)
@@ -189,13 +190,16 @@ class ModelWrapper(object):
         self.saver = tf.train.Saver(
             var_list=self.rnn_vars + self.g_vars + self.d_vars, max_to_keep=5)
 
-    def train(self, num_train_example, ep, ckpt_dir='./ckpt_model', log=True):
+    def train(self, num_train_example, ep, ckpt_dir='./ckpt_model', log=True, load_idx=None):
         hps = self.hps
         num_batch_per_epoch = num_train_example // self.batch_size
         sample_size = self.batch_size
 
         # train
-        self.restore(ckpt_dir)
+        if load_idx:
+            self.restore(ckpt_dir, idx=load_idx)
+        else:
+            self.restore(ckpt_dir)
         for step in range(num_batch_per_epoch):
             # get noise (normal(mean=0, stddev=1.0))
             b_z = np.random.normal(loc=0.0, scale=1.0, size=(
@@ -271,13 +275,14 @@ if __name__ == '__main__':
     sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
     with tf.variable_scope('wrapper'):
         model_tr = ModelWrapper(sess, hps, filenames,
-                                batch_size=256, is_train=True)
+                                batch_size=512, is_train=True)
         model_tr.build()
     with tf.variable_scope('wrapper', reuse=True):
         model_vis = ModelWrapper(sess, hps, None, batch_size=5, is_train=False)
         model_vis.build()
 
     for ep in range(epoch):
-        model_tr.train(num_train_example=70504, ep=ep)
+        model_tr.train(num_train_example=70504, ep=ep,
+                       ckpt_dir='ckpt_model_txt_attention')
         model_vis._test(epoch=ep)
     sess.close()
