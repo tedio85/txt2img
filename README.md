@@ -1,2 +1,2 @@
 # txt2img
-reimplement some layers for CS565600 Deep Learning class
+Implement text2image for CS565600 Deep Learning class
