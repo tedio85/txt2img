@@ -44,7 +44,7 @@ def imageEncoder(x, out_dim=128, df_dim=64, is_train=True, reuse=tf.AUTO_REUSE):
     return h4
 
 
-def textEncoder(txt, vocab_size, with_matrix=False, reuse=tf.AUTO_REUSE, pad_token=0, bidirectional=False, word_dim=256, sent_dim=128):
+def textEncoder(txt, vocab_size, seq_len, attention=False, with_matrix=False, reuse=tf.AUTO_REUSE, pad_token=0, bidirectional=False, word_dim=256, sent_dim=128):
     with tf.variable_scope('TextEncoder', reuse=reuse):
         if with_matrix:
             w_embed_seq, w_matrix = _word_embedding(
@@ -57,8 +57,21 @@ def textEncoder(txt, vocab_size, with_matrix=False, reuse=tf.AUTO_REUSE, pad_tok
             w_embed_seq, sent_dim, w_seq_len, bidirectional)
         # according to the phi function of paper "Generative Adversarial Text
         # to Image Synthesis"
-        code = Layer.dense(
-            s_embed[:, -1, :], output_dim=sent_dim, act=tf.nn.leaky_relu, name='code')
+        if attention:
+            s_embed_re = tf.reshape(
+                s_embed, [-1, seq_len * sent_dim], name='attention_reshape')
+            a_txt_W = tf.get_variable(name='attention_W', shape=(seq_len * sent_dim, seq_len), 
+              initializer=tf.truncated_normal_initializer(stddev=0.02), dtype=tf.float32)
+            a_txt_b = tf.get_variable(name='attention_b', shape=(seq_len), 
+              initializer=tf.constant_initializer(value=0.0), dtype=tf.float32)
+            # shape = [batch_size, seq_len]
+            a_txt = tf.sigmoid(tf.matmul(s_embed_re, a_txt_W) + a_txt_b)
+            encode = tf.multiply(s_embed_re, tf.concat([a_txt for i in range(sent_dim)], axis=1))
+
+        else:
+            encode = s_embed[:, -1, :]
+        code = Layer.dense(encode, output_dim=sent_dim,
+                           act=tf.nn.leaky_relu, name='code')
     return code if not with_matrix else (code, w_matrix)
 
 
@@ -120,30 +133,30 @@ def generator(z, txt, img_height, img_width, img_depth=3, gf_dim=128, is_train=T
                          W_init=w_init, b_init=None, name='h0/dense')
         h0 = tf.reshape(
             h0, shape=[-1, H16, W16, gf_dim * 8], name='h0/reshape')
-        h0 = Layer.batch_norm(h0, act=tf.nn.relu, is_train=is_train,
+        h0 = Layer.batch_norm(h0, act=tf.nn.leaky_relu, is_train=is_train,
                               gamma_init=gamma_init, name='h0/batch_norm')
         # 1
         h1 = Layer.deconv2d(h0, act=tf.identity, filter_shape=[4, 4, gf_dim * 4, gf_dim * 8],
                             output_shape=[tf.shape(h0)[0], H8, W8, gf_dim * 4], strides=[1, 2, 2, 1], padding='SAME',
                             W_init=w_init, name='h1/deconv2d')
-        h1 = Layer.batch_norm(h1, act=tf.nn.relu, is_train=is_train,
+        h1 = Layer.batch_norm(h1, act=tf.nn.leaky_relu, is_train=is_train,
                               gamma_init=gamma_init, name='h1/batch_norm')
         # 2
         h2 = Layer.deconv2d(h1, act=tf.identity, filter_shape=[4, 4, gf_dim * 2, gf_dim * 4],
                             output_shape=[tf.shape(h1)[0], H4, W4, gf_dim * 2], strides=[1, 2, 2, 1], padding='SAME',
                             W_init=w_init, name='h2/deconv2d')
-        h2 = Layer.batch_norm(h2, act=tf.nn.relu, is_train=is_train,
+        h2 = Layer.batch_norm(h2, act=tf.nn.leaky_relu, is_train=is_train,
                               gamma_init=gamma_init, name='h2/batch_norm')
         # 3
         h3 = Layer.deconv2d(h2, act=tf.identity, filter_shape=[4, 4, gf_dim, gf_dim * 2],
                             output_shape=[tf.shape(h1)[0], H2, W2, gf_dim], strides=[1, 2, 2, 1], padding='SAME',
                             W_init=w_init, name='h3/deconv2d')
-        h3 = Layer.batch_norm(h3, act=tf.nn.relu, is_train=is_train,
+        h3 = Layer.batch_norm(h3, act=tf.nn.leaky_relu, is_train=is_train,
                               gamma_init=gamma_init, name='h3/batch_norm')
         # output
         h4 = Layer.deconv2d(h3, act=tf.identity, filter_shape=[4, 4, D, gf_dim],
-                             output_shape=[tf.shape(h3)[0], H, W, D], strides=[1, 2, 2, 1], padding='SAME',
-                             W_init=w_init, name='h10/deconv2d')
+                            output_shape=[tf.shape(h3)[0], H, W, D], strides=[1, 2, 2, 1], padding='SAME',
+                            W_init=w_init, name='h10/deconv2d')
         logits = h4
         outputs = tf.div(tf.nn.tanh(logits) + 1, 2)
     return outputs
@@ -174,7 +187,7 @@ def discriminator(x, txt, img_height, img_width, img_depth=3, df_dim=64, is_trai
                           padding='SAME', W_init=w_init, b_init=None, name='h3/conv2d')
         h3 = Layer.batch_norm(h3, act=tf.nn.leaky_relu, is_train=is_train,
                               gamma_init=gamma_init, name='h3/batch_norm')
-       
+
         # txt: [batch_size, s_dim]
         # h6_out: [batch_size, _, _, df_dim*8]
         txt_expand = tf.expand_dims(txt, axis=1, name='txt_expand_1')
