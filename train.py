@@ -1,6 +1,5 @@
 # ---------------
 # Author: Tu, Tao
-# Reference: https://github.com/zsdonghao/text-to-image/blob/master/train_txt2im.py
 # ---------------
 from Layer import cosine_similarity as cos_loss
 import tensorflow as tf
@@ -29,15 +28,15 @@ hps_list = {
     'lr': 2e-4,
     'beta1': 0.5,
     'beta2': 0.9,
-    'clip_norm': 1.0,
+    'clip_norm': 1e-1,
     'n_critic': 1,
     'imH': 64,
     'imW': 64,
     'imD': 3,
     'max_seq_len': 20,
     'z_dim': 64,
-    's_dim': 64,
-    'w_dim': 64,
+    's_dim': 128,
+    'w_dim': 256,
     'gf_dim': 128,
     'df_dim': 64,
     'voc_size': 6375,
@@ -54,6 +53,8 @@ def hparas(hps_list):
     return hps
 
 
+
+
 class ModelWrapper(object):
     """ For convenience. """
 
@@ -65,16 +66,15 @@ class ModelWrapper(object):
         self.batch_size = batch_size
         self.use_bn = use_bn
         self.is_train = is_train
-
+    
     def _build_dataset(self):
         def crop(img):
             img = tf.decode_raw(img, tf.uint8)
             img = tf.reshape(img, [500, 500, 3])
             img = tf.cast(img, tf.float32)
             img = tf.div(img, 255.0)
-            img = tf.image.resize_images(img, size=[64 + 15, 64 + 15])
-            img = tf.random_crop(
-                img, [self.hps.imH, self.hps.imW, self.hps.imD])
+            img = tf.image.resize_images(img, size=[self.hps.imH+15, self.hps.imW+15])
+            img = tf.random_crop(img, [self.hps.imH, self.hps.imW, self.hps.imD])
             img = tf.image.random_flip_left_right(img)
             img = tf.image.random_flip_up_down(img)
             return img
@@ -95,57 +95,62 @@ class ModelWrapper(object):
             caption_w = ex['caption_wrong']
 
             return img, caption, img_w, caption_w
-
+        
         dataset = tf.data.TFRecordDataset(self.files_tr)
-        dataset = dataset.map(parser).repeat().shuffle(
-            buffer_size=100 * self.batch_size).batch(self.batch_size)
+        dataset = dataset.map(parser).repeat().shuffle(buffer_size=10*self.batch_size).batch(self.batch_size)
         iterator = dataset.make_initializable_iterator()
         item = iterator.get_next()
         self.sess.run(iterator.initializer)
         return item
-
+    
     def build(self):
         hps = self.hps
         with tf.variable_scope('inputs'):
             if self.is_train:
                 self.img, self.cap, self.img_w, self.cap_w = self._build_dataset()
             else:
-                self.cap = tf.placeholder(
-                    tf.int64, shape=[None, hps.max_seq_len], name='caption_inference')
-            self.z = tf.placeholder(
-                tf.float32, shape=[None, hps.z_dim], name='noise')
+                self.cap = tf.placeholder(tf.int64, shape=[None, hps.max_seq_len], name='caption_inference')
+            self.z = tf.placeholder(tf.float32, shape=[None, hps.z_dim], name='noise')
 
         with tf.variable_scope('models'):
             # x: image embedding
             # v: text embedding
             if self.is_train:
-                self.v = textEncoder(self.cap, hps.voc_size, seq_len=hps.max_seq_len, attention=True, pad_token=hps.pad_token,
+                self.v = textEncoder(self.cap, hps.voc_size, seq_len=hps.max_seq_len, pad_token=hps.pad_token,
                                      word_dim=hps.w_dim, sent_dim=hps.s_dim)
-                self.v_w = textEncoder(self.cap_w, hps.voc_size, seq_len=hps.max_seq_len, attention=True,
+                self.v_w = textEncoder(self.cap_w, hps.voc_size, seq_len=hps.max_seq_len, 
                                        pad_token=hps.pad_token, word_dim=hps.w_dim, sent_dim=hps.s_dim, reuse=True)
-
+                # interpolation
+                self.v_i = 0.5 * self.v + 0.5 * self.v_w
+                
                 self.img_fake = G(self.z, self.v, img_height=hps.imH, img_width=hps.imW,
-                                  img_depth=hps.imD, gf_dim=hps.gf_dim, is_train=self.use_bn)
+                                img_depth=hps.imD, gf_dim=hps.gf_dim, is_train=self.use_bn)
+                self.img_fake_i = G(self.z, self.v_i, img_height=hps.imH, img_width=hps.imW,
+                                img_depth=hps.imD, gf_dim=hps.gf_dim, is_train=self.use_bn)
                 # real data
                 self.d_real, self.logits_real = D(self.img, self.v, img_height=hps.imH, img_width=hps.imW,
                                                   img_depth=hps.imD, df_dim=hps.df_dim, is_train=self.use_bn)
                 # fake data from generator
                 _, self.logits_fake = D(self.img_fake, self.v, img_height=hps.imH, img_width=hps.imW,
                                         img_depth=hps.imD, df_dim=hps.df_dim, is_train=self.use_bn, reuse=True)
+                _, self.logits_fake_i = D(self.img_fake_i, self.v, img_height=hps.imH, img_width=hps.imW,
+                                        img_depth=hps.imD, df_dim=hps.df_dim, is_train=self.use_bn, reuse=True)
                 # mismatched data
                 _, self.logits_mis = D(self.img, self.v_w, img_height=hps.imH, img_width=hps.imW,
                                        img_depth=hps.imD, df_dim=hps.df_dim, is_train=self.use_bn, reuse=True)
             else:
-                self.v = textEncoder(self.cap, hps.voc_size, seq_len=hps.max_seq_len, attention=True, pad_token=hps.pad_token,
+                self.v = textEncoder(self.cap, hps.voc_size, seq_len=hps.max_seq_len, pad_token=hps.pad_token,
                                      word_dim=hps.w_dim, sent_dim=hps.s_dim)
                 self.img_fake = G(self.z, self.v, img_height=hps.imH, img_width=hps.imW,
-                                  img_depth=hps.imD, gf_dim=hps.gf_dim, is_train=self.use_bn)
+                                img_depth=hps.imD, gf_dim=hps.gf_dim, is_train=self.use_bn)
 
         with tf.variable_scope('losses'):
             if self.is_train:
                 # loss of generator
                 self.g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
                     logits=self.logits_fake, labels=tf.ones_like(self.logits_fake), name='d_loss_fake'))
+                self.g_loss += tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
+                    logits=self.logits_fake_i, labels=tf.ones_like(self.logits_fake_i), name='d_loss_fake_i'))
                 # loss of discriminator
                 self.d_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
                     logits=self.logits_real, labels=tf.ones_like(self.logits_real), name='d_loss_real'))
@@ -154,7 +159,7 @@ class ModelWrapper(object):
                 self.d_loss_mis = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
                     logits=self.logits_mis, labels=tf.zeros_like(self.logits_mis), name='d_loss_mismatch'))
                 self.d_loss = self.d_loss_real + 0.5 * \
-                    (self.d_loss_fake + self.d_loss_mis)
+                    (self.d_loss_fake + self.d_loss_mis)                
 
         # the power of name scope
         # self.cnn_vars = [var for var in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='models/ImageEncoder')]
@@ -169,15 +174,11 @@ class ModelWrapper(object):
             if self.is_train:
                 self.lr_op = tf.Variable(hps.lr, trainable=False)
                 # optimizer for textEncoder
-                self.rnn_opt = tf.train.AdamOptimizer(
-                    self.lr_op, beta1=hps.beta1, beta2=hps.beta2)
-                grads_and_vars = self.rnn_opt.compute_gradients(
-                    self.g_loss + self.d_loss, self.rnn_vars)
-                clipped_grads_and_vars = [
-                    (tf.clip_by_norm(gv[0], hps.clip_norm), gv[1]) for gv in grads_and_vars]
+                self.rnn_opt = tf.train.AdamOptimizer(self.lr_op, beta1=hps.beta1, beta2=hps.beta2)
+                grads_and_vars = self.rnn_opt.compute_gradients(self.g_loss + self.d_loss, self.rnn_vars)
+                clipped_grads_and_vars = [(tf.clip_by_norm(gv[0], hps.clip_norm), gv[1]) for gv in grads_and_vars]
                 # apply gradient and variables to optimizer
-                self.rnn_opt = self.rnn_opt.apply_gradients(
-                    clipped_grads_and_vars)
+                self.rnn_opt = self.rnn_opt.apply_gradients(clipped_grads_and_vars)
 
                 # optimizer for generator
                 self.g_opt = tf.train.AdamOptimizer(self.lr_op, beta1=hps.beta1,
@@ -187,15 +188,14 @@ class ModelWrapper(object):
                                                     beta2=hps.beta2).minimize(self.d_loss, var_list=self.d_vars)
 
         self.sess.run(tf.global_variables_initializer())
-        self.saver = tf.train.Saver(
-            var_list=self.rnn_vars + self.g_vars + self.d_vars, max_to_keep=5)
+        self.saver = tf.train.Saver(var_list=self.rnn_vars+self.g_vars+self.d_vars, max_to_keep=5)
 
     def train(self, num_train_example, ep, ckpt_dir='./ckpt_model', log=True, load_idx=None):
         hps = self.hps
         num_batch_per_epoch = num_train_example // self.batch_size
         sample_size = self.batch_size
 
-        # train
+        # train       
         if load_idx:
             self.restore(ckpt_dir, idx=load_idx)
         else:
@@ -203,17 +203,15 @@ class ModelWrapper(object):
         for step in range(num_batch_per_epoch):
             # get noise (normal(mean=0, stddev=1.0))
             b_z = np.random.normal(loc=0.0, scale=1.0, size=(
-                sample_size, hps.z_dim)).astype(np.float32)
+                    sample_size, hps.z_dim)).astype(np.float32)
             step_time = time.time()
             # update D
             errD, errD_real, errD_fake, errD_mis, _ = self.sess.run(
-                [self.d_loss, self.d_loss_real, self.d_loss_fake,
-                    self.d_loss_mis, self.d_opt],
+                [self.d_loss, self.d_loss_real, self.d_loss_fake, self.d_loss_mis, self.d_opt], 
                 feed_dict={self.z: b_z})
             # update G after D have been updated n_critic times
             if step % hps.n_critic == 0:
-                errG, _ = self.sess.run(
-                    [self.g_loss, self.g_opt], feed_dict={self.z: b_z})
+                errG, _ = self.sess.run([self.g_loss, self.g_opt], feed_dict={self.z: b_z})
             # update textEncoder
             self.sess.run(self.rnn_opt, feed_dict={self.z: b_z})
             if log and step % hps.n_critic == 0:
@@ -221,14 +219,14 @@ class ModelWrapper(object):
                     'Epoch: %2d [%4d/%4d] time: %4.4fs, g_loss: %.8f, d_loss: %.8f'
                     % (ep, step, num_batch_per_epoch, time.time() - step_time, errG, errD))
         self.save(ckpt_dir=ckpt_dir, idx=ep)
-
+        
+    
     def _test(self, epoch, save_path='result/'):
         if not os.path.exists(save_path):
             os.makedirs(save_path)
         ni = int(np.ceil(np.sqrt(self.batch_size)))
         sample_size = self.batch_size
-        sample_seed = np.random.normal(loc=0.0, scale=1.0, size=(
-            8 * sample_size, hps.z_dim)).astype(np.float32)
+        sample_seed = np.random.normal(loc=0.0, scale=1.0, size=(8 * sample_size, hps.z_dim)).astype(np.float32)
         sample_sentence = ["the flower shown has yellow anther red pistil and bright red petals."] * sample_size + \
             ["this flower has petals that are yellow, white and purple and has dark lines"] * sample_size + \
             ["the petals on this flower are white with a yellow center"] * sample_size + \
@@ -238,13 +236,13 @@ class ModelWrapper(object):
             ["this flower has petals that are blue and white."] * sample_size + \
             ["these white flowers have petals that start off white in color and end in a white towards the tips."] * sample_size
         for i, sent in enumerate(sample_sentence):
-            sample_sentence[i] = sent2IdList(sent, hps.max_seq_len)
+              sample_sentence[i] = sent2IdList(sent, hps.max_seq_len)
         img_gen = self.sess.run(self.img_fake, feed_dict={
-            self.cap: sample_sentence,
-            self.z: sample_seed})
-        save_images(img_gen, [8, sample_size],
-                    save_path + 'train_%d.png' % epoch)
+                self.cap: sample_sentence, 
+                self.z: sample_seed})
+        save_images(img_gen, [8, sample_size], save_path + 'train_%d.png' % epoch)
         logging.info('Done test')
+    
 
     def save(self, ckpt_dir='ckpt/', idx=0):
         if not os.path.exists(ckpt_dir):
@@ -264,25 +262,33 @@ class ModelWrapper(object):
                 return True
         return False
 
-
+    
+    
 if __name__ == '__main__':
     tf.reset_default_graph()
     filenames = [DIR_RECORD + 'train_data-%d.tfrecords' % i for i in range(20)]
     hps = hparas(hps_list)
     epoch = 100
-    gpu_ratio = 0.7
+    gpu_ratio = 0.5
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_ratio)
     sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
     with tf.variable_scope('wrapper'):
-        model_tr = ModelWrapper(sess, hps, filenames,
-                                batch_size=512, is_train=True)
+        model_tr = ModelWrapper(sess, hps, filenames, batch_size=256, is_train=True)
         model_tr.build()
     with tf.variable_scope('wrapper', reuse=True):
         model_vis = ModelWrapper(sess, hps, None, batch_size=5, is_train=False)
         model_vis.build()
-
+        
     for ep in range(epoch):
-        model_tr.train(num_train_example=70504, ep=ep,
-                       ckpt_dir='ckpt_model_txt_attention')
+        if ep % (6) < 3:
+            hps.n_critic = 1
+        else:
+            hps.n_critic = 3
+        model_tr.train(num_train_example=70504, ep=ep, ckpt_dir='ckpt_model_s128_w256')
         model_vis._test(epoch=ep)
     sess.close()
+    
+    
+    
+    
+    
