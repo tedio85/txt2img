@@ -60,18 +60,21 @@ def textEncoder(txt, vocab_size, seq_len, attention=False, with_matrix=False, re
         if attention:
             s_embed_re = tf.reshape(
                 s_embed, [-1, seq_len * sent_dim], name='attention_reshape')
-            a_txt_W = tf.get_variable(name='attention_W', shape=(seq_len * sent_dim, seq_len), 
-              initializer=tf.truncated_normal_initializer(stddev=0.02), dtype=tf.float32)
-            a_txt_b = tf.get_variable(name='attention_b', shape=(seq_len), 
-              initializer=tf.constant_initializer(value=0.0), dtype=tf.float32)
+            a_txt_W = tf.get_variable(name='attention_W', shape=(seq_len * sent_dim, seq_len),
+                                      initializer=tf.truncated_normal_initializer(stddev=0.02), dtype=tf.float32)
+            a_txt_b = tf.get_variable(name='attention_b', shape=(seq_len),
+                                      initializer=tf.constant_initializer(value=0.0), dtype=tf.float32)
             # shape = [batch_size, seq_len]
             a_txt = tf.sigmoid(tf.matmul(s_embed_re, a_txt_W) + a_txt_b)
-            encode = tf.multiply(s_embed_re, tf.concat([a_txt for i in range(sent_dim)], axis=1))
-
+            #a_txt = tf.expand_dims(a_txt, axis=-1)
+            #a_txt = tf.tile(a_txt, multiples=[1, 1, sent_dim])
+            code = tf.multiply(s_embed_re, tf.concat(
+                [a_txt for i in range(sent_dim)], axis=1))
+            # s_embed: [batch_size, seq_len, s_dim]
+            #code = tf.reduce_mean(tf.multiply(s_embed, a_txt), axis=1)
         else:
-            encode = s_embed[:, -1, :]
-        code = Layer.dense(encode, output_dim=sent_dim,
-                           act=tf.nn.leaky_relu, name='code')
+            code = s_embed[:, -1, :]
+        #code = Layer.dense(code, output_dim=sent_dim, act=tf.nn.leaky_relu, name='code')
     return code if not with_matrix else (code, w_matrix)
 
 
@@ -120,7 +123,7 @@ def _sent_embedding(w_embed_seq, s_dim, w_seq_len, bidirectional=False):
     return outputs
 
 
-def generator(z, txt, img_height, img_width, img_depth=3, gf_dim=128, is_train=True, reuse=tf.AUTO_REUSE):
+def generator(z, txt, img_height, img_width, img_depth=3, s_dim=128, gf_dim=128, is_train=True, reuse=tf.AUTO_REUSE):
     """ Generate image given a code [z, txt]. """
     H, W, D = img_height, img_width, img_depth
     w_init = tf.random_normal_initializer(stddev=0.02)
@@ -128,30 +131,32 @@ def generator(z, txt, img_height, img_width, img_depth=3, gf_dim=128, is_train=T
     H2, H4, H8, H16 = int(H / 2), int(H / 4), int(H / 8), int(H / 16)
     W2, W4, W8, W16 = int(W / 2), int(W / 4), int(W / 8), int(W / 16)
     with tf.variable_scope('Generator', reuse=reuse):
+        txt = Layer.dense(txt, s_dim, act=tf.nn.leaky_relu,
+                          W_init=w_init, name='txt/dense')
         code = tf.concat([z, txt], axis=1, name='code')
         h0 = Layer.dense(code, gf_dim * 8 * H16 * W16, act=tf.identity,
                          W_init=w_init, b_init=None, name='h0/dense')
         h0 = tf.reshape(
             h0, shape=[-1, H16, W16, gf_dim * 8], name='h0/reshape')
-        h0 = Layer.batch_norm(h0, act=tf.nn.leaky_relu, is_train=is_train,
+        h0 = Layer.batch_norm(h0, act=tf.nn.relu, is_train=is_train,
                               gamma_init=gamma_init, name='h0/batch_norm')
         # 1
         h1 = Layer.deconv2d(h0, act=tf.identity, filter_shape=[4, 4, gf_dim * 4, gf_dim * 8],
                             output_shape=[tf.shape(h0)[0], H8, W8, gf_dim * 4], strides=[1, 2, 2, 1], padding='SAME',
                             W_init=w_init, name='h1/deconv2d')
-        h1 = Layer.batch_norm(h1, act=tf.nn.leaky_relu, is_train=is_train,
+        h1 = Layer.batch_norm(h1, act=tf.nn.relu, is_train=is_train,
                               gamma_init=gamma_init, name='h1/batch_norm')
         # 2
         h2 = Layer.deconv2d(h1, act=tf.identity, filter_shape=[4, 4, gf_dim * 2, gf_dim * 4],
                             output_shape=[tf.shape(h1)[0], H4, W4, gf_dim * 2], strides=[1, 2, 2, 1], padding='SAME',
                             W_init=w_init, name='h2/deconv2d')
-        h2 = Layer.batch_norm(h2, act=tf.nn.leaky_relu, is_train=is_train,
+        h2 = Layer.batch_norm(h2, act=tf.nn.relu, is_train=is_train,
                               gamma_init=gamma_init, name='h2/batch_norm')
         # 3
         h3 = Layer.deconv2d(h2, act=tf.identity, filter_shape=[4, 4, gf_dim, gf_dim * 2],
                             output_shape=[tf.shape(h1)[0], H2, W2, gf_dim], strides=[1, 2, 2, 1], padding='SAME',
                             W_init=w_init, name='h3/deconv2d')
-        h3 = Layer.batch_norm(h3, act=tf.nn.leaky_relu, is_train=is_train,
+        h3 = Layer.batch_norm(h3, act=tf.nn.relu, is_train=is_train,
                               gamma_init=gamma_init, name='h3/batch_norm')
         # output
         h4 = Layer.deconv2d(h3, act=tf.identity, filter_shape=[4, 4, D, gf_dim],
@@ -162,7 +167,7 @@ def generator(z, txt, img_height, img_width, img_depth=3, gf_dim=128, is_train=T
     return outputs
 
 
-def discriminator(x, txt, img_height, img_width, img_depth=3, df_dim=64, is_train=True, reuse=tf.AUTO_REUSE):
+def discriminator(x, txt, img_height, img_width, img_depth=3, s_dim=128, df_dim=64, is_train=True, reuse=tf.AUTO_REUSE):
     """ Determine if an image x condition on txt is real or fake. """
     H, W, D = img_height, img_width, img_depth
     w_init = tf.random_normal_initializer(stddev=0.02)
@@ -190,6 +195,8 @@ def discriminator(x, txt, img_height, img_width, img_depth=3, df_dim=64, is_trai
 
         # txt: [batch_size, s_dim]
         # h6_out: [batch_size, _, _, df_dim*8]
+        txt = Layer.dense(txt, s_dim, act=tf.nn.leaky_relu,
+                          W_init=w_init, name='txt/dense')
         txt_expand = tf.expand_dims(txt, axis=1, name='txt_expand_1')
         txt_expand = tf.expand_dims(txt_expand, axis=1, name='txt_expand_2')
         txt_expand = tf.tile(txt_expand, multiples=[
